@@ -1,5 +1,0 @@
-2025-04-10 00:52:46,104 - trading_agent - INFO - Logger initialized. Log file: logs/trading_agent_20250410_005246.log
-2025-04-10 00:52:46,105 - trading_agent - INFO - Starting Simplified Trading Agent
-2025-04-10 00:52:47,532 - trading_agent - ERROR - Error analyzing with GBPUSDScalpingStrategy: 'TradeSetup' object is not iterable
-2025-04-10 00:52:48,035 - trading_agent - ERROR - Error analyzing with USDJPYEventStrategy: 'TradeSetup' object is not iterable
-2025-04-10 00:52:48,331 - trading_agent - ERROR - Error analyzing with VIXVolatilityStrategy: 'TradeSetup' object is not iterable
