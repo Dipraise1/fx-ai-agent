@@ -1,0 +1,88 @@
+2025-04-10 12:43:51,538 - trading_agent - INFO - Logger initialized. Log file: logs/trading_agent_20250410_124351.log
+2025-04-10 12:43:51,539 - trading_agent - INFO - Starting real-time trading agent
+2025-04-10 12:43:51,541 - trading_agent - INFO - Logger initialized. Log file: logs/trading_agent_20250410_124351.log
+2025-04-10 12:43:51,542 - trading_agent - INFO - Watching symbols: ETHUSD, VIX, SOLUSD, GBPUSD, USDJPY
+2025-04-10 12:43:51,543 - trading_agent - WARNING - Failed to subscribe to ETHUSD
+2025-04-10 12:43:51,543 - trading_agent - WARNING - Failed to subscribe to VIX
+2025-04-10 12:43:51,544 - trading_agent - WARNING - Failed to subscribe to SOLUSD
+2025-04-10 12:43:51,545 - trading_agent - WARNING - Failed to subscribe to GBPUSD
+2025-04-10 12:43:51,545 - trading_agent - WARNING - Failed to subscribe to USDJPY
+2025-04-10 12:43:51,546 - trading_agent - INFO - Successfully subscribed to 0 out of 5 symbols
+2025-04-10 12:43:51,547 - trading_agent - INFO - Real-time monitoring started
+2025-04-10 12:43:51,547 - trading_agent - INFO - Running initial market analysis...
+2025-04-10 12:43:51,547 - trading_agent - INFO - Starting market analysis
+2025-04-10 12:43:51,547 - trading_agent - INFO - Running GBPUSD_Scalping strategy...
+2025-04-10 12:43:53,071 - trading_agent - INFO - Trade Setup Generated: GBPUSD - GBPUSD_Scalping
+2025-04-10 12:43:53,072 - trading_agent - INFO - TRADE SETUP: GBPUSD - GBPUSD_Scalping
+Direction: No Trade
+Entry Zone: N/A
+Stop Loss: N/A
+Targets: N/A
+Risk/Reward: N/A
+Confidence: 0%
+Rationale: Unable to fetch required market data
+Generated: 2025-04-10 12:43:53
+2025-04-10 12:43:53,072 - trading_agent - INFO - Running USDJPY_Event strategy...
+2025-04-10 12:43:53,489 - trading_agent - INFO - Trade Setup Generated: USDJPY - USDJPY_Event
+2025-04-10 12:43:53,489 - trading_agent - INFO - TRADE SETUP: USDJPY - USDJPY_Event
+Direction: No Trade
+Entry Zone: N/A
+Stop Loss: N/A
+Targets: N/A
+Risk/Reward: N/A
+Confidence: 0%
+Rationale: Unable to fetch required market data
+Generated: 2025-04-10 12:43:53
+2025-04-10 12:43:53,490 - trading_agent - INFO - Running VIX_Volatility strategy...
+2025-04-10 12:43:53,703 - trading_agent - INFO - Trade Setup Generated: VIX - VIX_Volatility
+2025-04-10 12:43:53,703 - trading_agent - INFO - TRADE SETUP: VIX - VIX_Volatility
+Direction: No Trade
+Entry Zone: N/A
+Stop Loss: N/A
+Targets: N/A
+Risk/Reward: N/A
+Confidence: 0%
+Rationale: Unable to fetch required VIX data
+Generated: 2025-04-10 12:43:53
+2025-04-10 12:43:53,703 - trading_agent - INFO - Running Crypto_Strategy strategy...
+2025-04-10 12:43:55,651 - trading_agent - INFO - Trade Setup Generated: SOLUSD - Crypto_Strategy
+2025-04-10 12:43:55,652 - trading_agent - INFO - TRADE SETUP: SOLUSD - Crypto_Strategy
+Direction: No Trade
+Entry Zone: N/A
+Stop Loss: N/A
+Targets: N/A
+Risk/Reward: N/A
+Confidence: 0%
+Rationale: Unable to fetch required market data
+Generated: 2025-04-10 12:43:54
+2025-04-10 12:43:55,652 - trading_agent - INFO - Trade Setup Generated: ETHUSD - Crypto_Strategy
+2025-04-10 12:43:55,652 - trading_agent - INFO - TRADE SETUP: ETHUSD - Crypto_Strategy
+Direction: No Trade
+Entry Zone: N/A
+Stop Loss: N/A
+Targets: N/A
+Risk/Reward: N/A
+Confidence: 0%
+Rationale: Unable to fetch required market data
+Generated: 2025-04-10 12:43:55
+2025-04-10 12:43:55,862 - trading_agent - INFO - Market Commentary:
+2025-04-10 12:43:55,862 - trading_agent - INFO - ----- MARKET COMMENTARY -----
+Overall market sentiment: NEUTRAL
+
+Analysis time: 2025-04-10 12:43:55
+
+FOREX MARKET:
+GBPUSD: No trade setup. Unable to fetch required market data
+
+USDJPY: No trade setup. Unable to fetch required market data
+
+CRYPTOCURRENCY MARKET:
+SOLUSD: No trade setup. Unable to fetch required market data
+
+ETHUSD: No trade setup. Unable to fetch required market data
+
+VOLATILITY MARKET:
+VIX: No trade setup. Unable to fetch required VIX data
+
+
+2025-04-10 12:43:55,863 - trading_agent - INFO - Analysis results saved to results/analysis_20250410_124355.json

@@ -1,0 +1,16 @@
+2025-04-10 12:41:57,674 - trading_agent - INFO - Logger initialized. Log file: logs/trading_agent_20250410_124157.log
+2025-04-10 12:41:57,674 - trading_agent - INFO - Starting real-time model trainer
+2025-04-10 12:41:57,689 - trading_agent.model_trainer - INFO - Initialized 15 prediction models
+2025-04-10 12:41:57,689 - trading_agent.model_trainer - INFO - Starting real-time model training
+2025-04-10 12:41:57,689 - trading_agent.model_trainer - INFO - Starting model training cycle
+2025-04-10 12:41:57,689 - trading_agent.model_trainer - INFO - Fetching data for GBPUSD 15
+2025-04-10 12:41:58,400 - trading_agent.model_trainer - WARNING - No data available for GBPUSD 15
+2025-04-10 12:41:58,400 - trading_agent.model_trainer - INFO - Fetching data for GBPUSD 60
+2025-04-10 12:41:58,637 - trading_agent.model_trainer - WARNING - No data available for GBPUSD 60
+2025-04-10 12:41:58,638 - trading_agent.model_trainer - INFO - Fetching data for GBPUSD D
+2025-04-10 12:41:58,879 - trading_agent.model_trainer - WARNING - No data available for GBPUSD D
+2025-04-10 12:41:58,879 - trading_agent.model_trainer - INFO - Fetching data for USDJPY 15
+2025-04-10 12:41:59,123 - trading_agent.model_trainer - WARNING - No data available for USDJPY 15
+2025-04-10 12:41:59,123 - trading_agent.model_trainer - INFO - Fetching data for USDJPY 60
+2025-04-10 12:41:59,396 - trading_agent.model_trainer - WARNING - No data available for USDJPY 60
+2025-04-10 12:41:59,396 - trading_agent.model_trainer - INFO - Fetching data for USDJPY D

@@ -1,0 +1,74 @@
+Setting up NLTK fallbacks for offline operation
+Setting up NLTK fallbacks for offline operation
+[nltk_data] Error loading stopwords: <urlopen error [SSL:
+[nltk_data]     CERTIFICATE_VERIFY_FAILED] certificate verify failed:
+[nltk_data]     unable to get local issuer certificate (_ssl.c:1020)>
+[nltk_data] Error loading punkt: <urlopen error [SSL:
+[nltk_data]     CERTIFICATE_VERIFY_FAILED] certificate verify failed:
+[nltk_data]     unable to get local issuer certificate (_ssl.c:1020)>
+[nltk_data] Error loading wordnet: <urlopen error [SSL:
+[nltk_data]     CERTIFICATE_VERIFY_FAILED] certificate verify failed:
+[nltk_data]     unable to get local issuer certificate (_ssl.c:1020)>
+2025-04-10 12:44:45,053 - trading_agent - INFO - Logger initialized. Log file: logs/trading_agent_20250410_124445.log
+2025-04-10 12:44:45,054 - trading_agent - INFO - Starting real-time model trainer
+2025-04-10 12:44:45,055 - trading_agent.model_trainer - INFO - Initialized 15 prediction models
+2025-04-10 12:44:45,055 - trading_agent.model_trainer - INFO - Starting real-time model training
+2025-04-10 12:44:45,056 - trading_agent.model_trainer - INFO - Starting model training cycle
+2025-04-10 12:44:45,056 - trading_agent.model_trainer - INFO - Fetching data for GBPUSD 15
+Error fetching data for GBPUSD: FinnhubAPIException(status_code: 401): Invalid API key.
+2025-04-10 12:44:45,872 - trading_agent.model_trainer - WARNING - No data available for GBPUSD 15
+2025-04-10 12:44:45,872 - trading_agent.model_trainer - INFO - Fetching data for GBPUSD 60
+Error fetching data for GBPUSD: FinnhubAPIException(status_code: 401): Invalid API key.
+2025-04-10 12:44:46,106 - trading_agent.model_trainer - WARNING - No data available for GBPUSD 60
+2025-04-10 12:44:46,107 - trading_agent.model_trainer - INFO - Fetching data for GBPUSD D
+Error fetching data for GBPUSD: FinnhubAPIException(status_code: 401): Invalid API key.
+2025-04-10 12:44:46,322 - trading_agent.model_trainer - WARNING - No data available for GBPUSD D
+2025-04-10 12:44:46,322 - trading_agent.model_trainer - INFO - Fetching data for USDJPY 15
+Error fetching data for USDJPY: FinnhubAPIException(status_code: 401): Invalid API key.
+2025-04-10 12:44:46,558 - trading_agent.model_trainer - WARNING - No data available for USDJPY 15
+2025-04-10 12:44:46,558 - trading_agent.model_trainer - INFO - Fetching data for USDJPY 60
+Error fetching data for USDJPY: FinnhubAPIException(status_code: 401): Invalid API key.
+2025-04-10 12:44:46,921 - trading_agent.model_trainer - WARNING - No data available for USDJPY 60
+2025-04-10 12:44:46,921 - trading_agent.model_trainer - INFO - Fetching data for USDJPY D
+Error fetching data for USDJPY: FinnhubAPIException(status_code: 401): Invalid API key.
+2025-04-10 12:44:47,156 - trading_agent.model_trainer - WARNING - No data available for USDJPY D
+2025-04-10 12:44:47,156 - trading_agent.model_trainer - INFO - Fetching data for EURUSD 15
+Error fetching data for EURUSD: FinnhubAPIException(status_code: 401): Invalid API key.
+2025-04-10 12:44:47,391 - trading_agent.model_trainer - WARNING - No data available for EURUSD 15
+2025-04-10 12:44:47,391 - trading_agent.model_trainer - INFO - Fetching data for EURUSD 60
+Error fetching data for EURUSD: FinnhubAPIException(status_code: 401): Invalid API key.
+2025-04-10 12:44:47,620 - trading_agent.model_trainer - WARNING - No data available for EURUSD 60
+2025-04-10 12:44:47,620 - trading_agent.model_trainer - INFO - Fetching data for EURUSD D
+Error fetching data for EURUSD: FinnhubAPIException(status_code: 401): Invalid API key.
+2025-04-10 12:44:47,854 - trading_agent.model_trainer - WARNING - No data available for EURUSD D
+2025-04-10 12:44:47,854 - trading_agent.model_trainer - INFO - Fetching data for ETHUSD 15
+2025-04-10 12:44:47,858 - trading_agent.model_trainer - INFO - Received 100 data points for ETHUSD 15
+2025-04-10 12:44:47,901 - trading_agent.model_trainer - INFO - Training model for ETHUSD 15 with 100 data points
+2025-04-10 12:44:47,912 - trading_agent.price_prediction - ERROR - Feature creation failed, cannot train model
+2025-04-10 12:44:47,913 - trading_agent.model_trainer - INFO - Trained ETHUSD 15 model, MSE: 0.000000
+2025-04-10 12:44:47,913 - trading_agent.model_trainer - INFO - Fetching data for ETHUSD 60
+2025-04-10 12:44:47,961 - trading_agent.model_trainer - INFO - Received 100 data points for ETHUSD 60
+2025-04-10 12:44:47,969 - trading_agent.model_trainer - INFO - Training model for ETHUSD 60 with 100 data points
+2025-04-10 12:44:47,978 - trading_agent.price_prediction - ERROR - Feature creation failed, cannot train model
+2025-04-10 12:44:47,978 - trading_agent.model_trainer - INFO - Trained ETHUSD 60 model, MSE: 0.000000
+2025-04-10 12:44:47,978 - trading_agent.model_trainer - INFO - Fetching data for ETHUSD D
+2025-04-10 12:44:48,063 - trading_agent.model_trainer - INFO - Received 100 data points for ETHUSD D
+2025-04-10 12:44:48,071 - trading_agent.model_trainer - INFO - Training model for ETHUSD D with 100 data points
+2025-04-10 12:44:48,080 - trading_agent.price_prediction - ERROR - Feature creation failed, cannot train model
+2025-04-10 12:44:48,080 - trading_agent.model_trainer - INFO - Trained ETHUSD D model, MSE: 0.000000
+2025-04-10 12:44:48,080 - trading_agent.model_trainer - INFO - Fetching data for SOLUSD 15
+2025-04-10 12:44:48,165 - trading_agent.model_trainer - INFO - Received 100 data points for SOLUSD 15
+2025-04-10 12:44:48,178 - trading_agent.model_trainer - INFO - Training model for SOLUSD 15 with 100 data points
+2025-04-10 12:44:48,195 - trading_agent.price_prediction - ERROR - Feature creation failed, cannot train model
+2025-04-10 12:44:48,195 - trading_agent.model_trainer - INFO - Trained SOLUSD 15 model, MSE: 0.000000
+2025-04-10 12:44:48,196 - trading_agent.model_trainer - INFO - Fetching data for SOLUSD 60
+2025-04-10 12:44:48,269 - trading_agent.model_trainer - INFO - Received 100 data points for SOLUSD 60
+2025-04-10 12:44:48,275 - trading_agent.model_trainer - INFO - Training model for SOLUSD 60 with 100 data points
+2025-04-10 12:44:48,284 - trading_agent.price_prediction - ERROR - Feature creation failed, cannot train model
+2025-04-10 12:44:48,284 - trading_agent.model_trainer - INFO - Trained SOLUSD 60 model, MSE: 0.000000
+2025-04-10 12:44:48,284 - trading_agent.model_trainer - INFO - Fetching data for SOLUSD D
+2025-04-10 12:44:48,375 - trading_agent.model_trainer - INFO - Received 100 data points for SOLUSD D
+2025-04-10 12:44:48,383 - trading_agent.model_trainer - INFO - Training model for SOLUSD D with 100 data points
+2025-04-10 12:44:48,392 - trading_agent.price_prediction - ERROR - Feature creation failed, cannot train model
+2025-04-10 12:44:48,392 - trading_agent.model_trainer - INFO - Trained SOLUSD D model, MSE: 0.000000
+2025-04-10 12:44:48,393 - trading_agent.model_trainer - INFO - Training cycle completed in 3.3 seconds. Trained: 6, Errors: 9

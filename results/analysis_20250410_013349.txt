@@ -1,0 +1,35 @@
+Analysis Results - 2025-04-10 01:33:49
+
+Setup 1:
+  Instrument: GBPUSD
+  Direction: No Trade
+  Entry Zone: None
+  Stop Loss: None
+  Targets: []
+  Risk/Reward: None
+  Confidence: 0
+  Strategy: GBPUSD_Scalping
+  Rationale: Unable to fetch required market data
+
+Setup 2:
+  Instrument: USDJPY
+  Direction: No Trade
+  Entry Zone: None
+  Stop Loss: None
+  Targets: []
+  Risk/Reward: None
+  Confidence: 0
+  Strategy: USDJPY_Event
+  Rationale: Unable to fetch required market data
+
+Setup 3:
+  Instrument: VIX
+  Direction: No Trade
+  Entry Zone: None
+  Stop Loss: None
+  Targets: []
+  Risk/Reward: None
+  Confidence: 0
+  Strategy: VIX_Volatility
+  Rationale: Unable to fetch required VIX data
+

@@ -1,0 +1,4 @@
+2025-04-10 12:38:42,863 - trading_agent - INFO - Logger initialized. Log file: logs/trading_agent_20250410_123842.log
+2025-04-10 12:38:42,864 - trading_agent - INFO - Starting real-time trading agent
+2025-04-10 12:38:42,870 - trading_agent - INFO - Logger initialized. Log file: logs/trading_agent_20250410_123842.log
+2025-04-10 12:38:42,870 - trading_agent - INFO - Watching symbols: SOLUSD, VIX, GBPUSD, ETHUSD, USDJPY

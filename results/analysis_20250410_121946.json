@@ -1,0 +1,55 @@
+{
+  "timestamp": "20250410_121946",
+  "analysis_time": "2025-04-10T12:19:41.659022",
+  "market_commentary": "----- MARKET COMMENTARY -----\nOverall market sentiment: NEUTRAL\n\nAnalysis time: 2025-04-10 12:19:46\n\nFOREX MARKET:\nGBPUSD: No trade setup. Unable to fetch required market data\n\nUSDJPY: No trade setup. Unable to fetch required market data\n\nCRYPTOCURRENCY MARKET:\nSOLUSD: No trade setup. Unable to fetch required market data\n\nVOLATILITY MARKET:\nVIX: No trade setup. Unable to fetch required VIX data\n\n",
+  "trade_setups": {
+    "GBPUSD_GBPUSD_Scalping": {
+      "instrument": "GBPUSD",
+      "direction": "No Trade",
+      "entry_zone": null,
+      "stop_loss": null,
+      "targets": [],
+      "risk_reward": null,
+      "confidence": 0,
+      "rationale": "Unable to fetch required market data",
+      "strategy": "GBPUSD_Scalping",
+      "timestamp": "2025-04-10T12:19:43.491666"
+    },
+    "USDJPY_USDJPY_Event": {
+      "instrument": "USDJPY",
+      "direction": "No Trade",
+      "entry_zone": null,
+      "stop_loss": null,
+      "targets": [],
+      "risk_reward": null,
+      "confidence": 0,
+      "rationale": "Unable to fetch required market data",
+      "strategy": "USDJPY_Event",
+      "timestamp": "2025-04-10T12:19:44.057916"
+    },
+    "VIX_VIX_Volatility": {
+      "instrument": "VIX",
+      "direction": "No Trade",
+      "entry_zone": null,
+      "stop_loss": null,
+      "targets": [],
+      "risk_reward": null,
+      "confidence": 0,
+      "rationale": "Unable to fetch required VIX data",
+      "strategy": "VIX_Volatility",
+      "timestamp": "2025-04-10T12:19:44.418390"
+    },
+    "SOLUSD_Crypto_Strategy_0": {
+      "instrument": "SOLUSD",
+      "direction": "No Trade",
+      "entry_zone": null,
+      "stop_loss": null,
+      "targets": [],
+      "risk_reward": null,
+      "confidence": 0,
+      "rationale": "Unable to fetch required market data",
+      "strategy": "Crypto_Strategy",
+      "timestamp": "2025-04-10T12:19:45.629824"
+    }
+  }
+}
