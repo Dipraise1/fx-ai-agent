@@ -5,10 +5,10 @@ from src.trade_setup import TradeSetup
 
 class USDJPYEventStrategy:
     """
-    JPY (USD/JPY) – Event-Driven Macro + Volatility Strategy
+    JPY (USD/JPY) – Event-Driven Macro + Volatility Strategy with SMC (Smart Money Concepts)
     
     Inputs: Central bank statements, CPI/NFP data, yield curve,
-    VIX correlations
+    VIX correlations, fair value gaps, liquidity, and market structure
     """
     
     def __init__(self, data_fetcher):
@@ -32,12 +32,14 @@ class USDJPYEventStrategy:
             TradeSetup object with trade details or no-trade reason
         """
         # Get forex data for different timeframes
-        df_1h = self.data_fetcher.get_forex_data(self.instrument, resolution='60', count=50)
-        df_daily = self.data_fetcher.get_forex_data(self.instrument, resolution='D', count=30)
+        df_1h = self.data_fetcher.get_forex_data(self.instrument, resolution='60', count=100)
+        df_4h = self.data_fetcher.get_forex_data(self.instrument, resolution='240', count=50)
+        df_daily = self.data_fetcher.get_forex_data(self.instrument, resolution='D', count=50)
         
         # Add technical indicators
-        if not df_1h.empty and not df_daily.empty:
+        if not df_1h.empty and not df_4h.empty and not df_daily.empty:
             df_1h = self.data_fetcher.add_technical_indicators(df_1h)
+            df_4h = self.data_fetcher.add_technical_indicators(df_4h)
             df_daily = self.data_fetcher.add_technical_indicators(df_daily)
             
             # Get VIX data
@@ -53,7 +55,7 @@ class USDJPYEventStrategy:
             news = self.data_fetcher.get_news(category="forex", min_id=0)
             
             # Check for trade setups based on event-driven approach
-            return self._check_for_setups(df_1h, df_daily, vix_data, calendar, yield_data, news)
+            return self._check_for_setups(df_1h, df_4h, df_daily, vix_data, calendar, yield_data, news)
         else:
             return TradeSetup.no_trade(
                 instrument=self.instrument,
@@ -61,13 +63,23 @@ class USDJPYEventStrategy:
                 reason="Unable to fetch required market data"
             )
     
-    def _check_for_setups(self, df_1h, df_daily, vix_data, calendar, yield_data, news):
+    def _check_for_setups(self, df_1h, df_4h, df_daily, vix_data, calendar, yield_data, news):
         """
         Check for event-driven trade setups
         
         Returns:
             TradeSetup with trade details or no-trade reason
         """
+        # Check for fair value gap setup (highest priority)
+        fvg_setup = self._check_fair_value_gap(df_1h, df_4h)
+        if fvg_setup:
+            return fvg_setup
+            
+        # Check for market structure break and continuation
+        structure_setup = self._check_market_structure(df_1h, df_4h, df_daily)
+        if structure_setup:
+            return structure_setup
+            
         # Check for upcoming economic events
         event_setup = self._check_upcoming_events(df_1h, calendar)
         if event_setup:
@@ -94,6 +106,426 @@ class USDJPYEventStrategy:
             strategy=self.name,
             reason="No significant macro events or setups detected for JPY"
         )
+    
+    def _check_fair_value_gap(self, df_1h, df_4h):
+        """
+        Check for Fair Value Gap (FVG) setups
+        
+        Fair Value Gaps occur when there's a gap between candle bodies that remains unfilled,
+        indicating a strong imbalance that often gets filled later
+        """
+        # Need enough data for this setup
+        if len(df_1h) < 24:
+            return None
+            
+        # Look for FVGs on 1 hour timeframe
+        bullish_fvgs = []  # (bottom of gap, top of gap, age in candles)
+        bearish_fvgs = []  # (bottom of gap, top of gap, age in candles)
+        
+        # Scan for Fair Value Gaps (skip the most recent 3 candles)
+        for i in range(3, len(df_1h) - 3):
+            # Bullish Fair Value Gap: Current candle low is above previous candle high
+            if df_1h.iloc[i]['low'] > df_1h.iloc[i-2]['high']:
+                # Gap between previous high and current low
+                fvg_bottom = df_1h.iloc[i-2]['high']
+                fvg_top = df_1h.iloc[i]['low']
+                
+                # Check if FVG is still valid (not filled yet)
+                is_filled = False
+                for j in range(i+1, len(df_1h)):
+                    if df_1h.iloc[j]['low'] <= fvg_top:
+                        is_filled = True
+                        break
+                        
+                if not is_filled:
+                    # Record this FVG with its age (most recent gets priority)
+                    age = len(df_1h) - i
+                    bullish_fvgs.append((fvg_bottom, fvg_top, age))
+            
+            # Bearish Fair Value Gap: Current candle high is below previous candle low
+            if df_1h.iloc[i]['high'] < df_1h.iloc[i-2]['low']:
+                # Gap between current high and previous low
+                fvg_bottom = df_1h.iloc[i]['high']
+                fvg_top = df_1h.iloc[i-2]['low']
+                
+                # Check if FVG is still valid (not filled yet)
+                is_filled = False
+                for j in range(i+1, len(df_1h)):
+                    if df_1h.iloc[j]['high'] >= fvg_bottom:
+                        is_filled = True
+                        break
+                        
+                if not is_filled:
+                    # Record this FVG with its age (most recent gets priority)
+                    age = len(df_1h) - i
+                    bearish_fvgs.append((fvg_bottom, fvg_top, age))
+            
+        # If no FVGs found, check on 4h timeframe
+        if not bullish_fvgs and not bearish_fvgs and len(df_4h) >= 20:
+            for i in range(3, len(df_4h) - 3):
+                # Bullish Fair Value Gap
+                if df_4h.iloc[i]['low'] > df_4h.iloc[i-2]['high']:
+                    fvg_bottom = df_4h.iloc[i-2]['high']
+                    fvg_top = df_4h.iloc[i]['low']
+                    
+                    is_filled = False
+                    for j in range(i+1, len(df_4h)):
+                        if df_4h.iloc[j]['low'] <= fvg_top:
+                            is_filled = True
+                            break
+                            
+                    if not is_filled:
+                        age = len(df_4h) - i
+                        bullish_fvgs.append((fvg_bottom, fvg_top, age))
+                
+                # Bearish Fair Value Gap
+                if df_4h.iloc[i]['high'] < df_4h.iloc[i-2]['low']:
+                    fvg_bottom = df_4h.iloc[i]['high']
+                    fvg_top = df_4h.iloc[i-2]['low']
+                    
+                    is_filled = False
+                    for j in range(i+1, len(df_4h)):
+                        if df_4h.iloc[j]['high'] >= fvg_bottom:
+                            is_filled = True
+                            break
+                            
+                    if not is_filled:
+                        age = len(df_4h) - i
+                        bearish_fvgs.append((fvg_bottom, fvg_top, age))
+        
+        # Current price and market state
+        current_price = df_1h.iloc[-1]['close']
+        
+        # Analyze 4h trend
+        trend = "neutral"
+        recent_4h = df_4h.iloc[-10:]
+        
+        if recent_4h['close'].iloc[-1] > recent_4h['close'].iloc[0] * 1.005:
+            trend = "bullish"
+        elif recent_4h['close'].iloc[-1] < recent_4h['close'].iloc[0] * 0.995:
+            trend = "bearish"
+            
+        # Sort FVGs by age (most recent first)
+        bullish_fvgs.sort(key=lambda x: x[2])
+        bearish_fvgs.sort(key=lambda x: x[2])
+        
+        # Check for price approaching a FVG
+        setup = None
+        
+        # Look for price approaching a bearish FVG from below (for short trades in bearish trend)
+        if trend == "bearish" and bearish_fvgs:
+            for fvg_bottom, fvg_top, _ in bearish_fvgs:
+                # Is price near the bottom of the bearish FVG?
+                if current_price >= fvg_bottom * 0.997 and current_price <= fvg_bottom * 1.003:
+                    # ATR for stop and target calculations
+                    atr = df_1h.iloc[-1].get('atr', 0.1)
+                    
+                    # Calculate entry, stop and targets
+                    entry_zone = (fvg_bottom * 0.999, fvg_bottom * 1.001)
+                    stop_loss = fvg_top + atr * 0.5
+                    
+                    # First target is the middle of the FVG
+                    mid_fvg = (fvg_top + fvg_bottom) / 2
+                    # Second target is the bottom of the FVG plus the height of the FVG
+                    fvg_height = fvg_top - fvg_bottom
+                    
+                    targets = [mid_fvg, fvg_bottom - fvg_height]
+                    
+                    # Calculate risk/reward
+                    risk_reward = TradeSetup.calculate_risk_reward(
+                        entry=sum(entry_zone) / 2,
+                        stop=stop_loss,
+                        target=targets[0]
+                    )
+                    
+                    # Only proceed if risk/reward is reasonable
+                    if risk_reward >= 1.5:
+                        # Generate rationale
+                        rationale = (
+                            f"Price approaching bearish Fair Value Gap at {fvg_bottom:.2f}-{fvg_top:.2f} in a {trend} trend. "
+                            f"FVGs represent areas of imbalance that tend to get filled. Entry at the bottom of "
+                            f"the FVG with confirmation of rejection. First target at the middle of the FVG, "
+                            f"second target is a full extension. Risk/reward: {risk_reward:.2f}."
+                        )
+                        
+                        # Determine confidence
+                        confidence = 75 if trend == "bearish" else 65
+                        
+                        # Return the trade setup
+                        setup = TradeSetup(
+                            instrument=self.instrument,
+                            direction="Short",
+                            entry_zone=entry_zone,
+                            stop_loss=stop_loss,
+                            targets=targets,
+                            risk_reward=risk_reward,
+                            confidence=confidence,
+                            rationale=rationale,
+                            strategy=f"{self.name}_FVG"
+                        )
+                        break
+        
+        # Look for price approaching a bullish FVG from above (for long trades in bullish trend)
+        elif trend == "bullish" and bullish_fvgs:
+            for fvg_bottom, fvg_top, _ in bullish_fvgs:
+                # Is price near the top of the bullish FVG?
+                if current_price >= fvg_top * 0.997 and current_price <= fvg_top * 1.003:
+                    # ATR for stop and target calculations
+                    atr = df_1h.iloc[-1].get('atr', 0.1)
+                    
+                    # Calculate entry, stop and targets
+                    entry_zone = (fvg_top * 0.999, fvg_top * 1.001)
+                    stop_loss = fvg_bottom - atr * 0.5
+                    
+                    # First target is the middle of the FVG
+                    mid_fvg = (fvg_top + fvg_bottom) / 2
+                    # Second target is the top of the FVG plus the height of the FVG
+                    fvg_height = fvg_top - fvg_bottom
+                    
+                    targets = [mid_fvg, fvg_top + fvg_height]
+                    
+                    # Calculate risk/reward
+                    risk_reward = TradeSetup.calculate_risk_reward(
+                        entry=sum(entry_zone) / 2,
+                        stop=stop_loss,
+                        target=targets[0]
+                    )
+                    
+                    # Only proceed if risk/reward is reasonable
+                    if risk_reward >= 1.5:
+                        # Generate rationale
+                        rationale = (
+                            f"Price approaching bullish Fair Value Gap at {fvg_bottom:.2f}-{fvg_top:.2f} in a {trend} trend. "
+                            f"FVGs represent areas of imbalance that tend to get filled. Entry at the top of "
+                            f"the FVG with confirmation of support. First target at the middle of the FVG, "
+                            f"second target is a full extension. Risk/reward: {risk_reward:.2f}."
+                        )
+                        
+                        # Determine confidence
+                        confidence = 75 if trend == "bullish" else 65
+                        
+                        # Return the trade setup
+                        setup = TradeSetup(
+                            instrument=self.instrument,
+                            direction="Long",
+                            entry_zone=entry_zone,
+                            stop_loss=stop_loss,
+                            targets=targets,
+                            risk_reward=risk_reward,
+                            confidence=confidence,
+                            rationale=rationale,
+                            strategy=f"{self.name}_FVG"
+                        )
+                        break
+                        
+        return setup
+        
+    def _check_market_structure(self, df_1h, df_4h, df_daily):
+        """
+        Analyze market structure for trends, shifts, and continuation patterns
+        
+        Identifies higher highs/lows in bullish markets and lower highs/lows in bearish markets
+        Detects structure breaks and potential reversals
+        """
+        # Need enough data
+        if len(df_4h) < 30:
+            return None
+            
+        # Get current price
+        current_price = df_4h.iloc[-1]['close']
+        
+        # Identify swing points on 4h timeframe
+        highs = []
+        lows = []
+        
+        # Find last 6 significant highs and lows, skipping the most recent 3 candles
+        for i in range(5, len(df_4h) - 3):
+            # Significant high (higher than 2 candles before and after)
+            if (df_4h.iloc[i]['high'] > df_4h.iloc[i-1]['high'] and 
+                df_4h.iloc[i]['high'] > df_4h.iloc[i-2]['high'] and
+                df_4h.iloc[i]['high'] > df_4h.iloc[i+1]['high'] and
+                df_4h.iloc[i]['high'] > df_4h.iloc[i+2]['high']):
+                highs.append((i, df_4h.iloc[i]['high']))
+                if len(highs) >= 6:
+                    highs.pop(0)  # Keep only the 6 most recent
+                    
+            # Significant low (lower than 2 candles before and after)
+            if (df_4h.iloc[i]['low'] < df_4h.iloc[i-1]['low'] and 
+                df_4h.iloc[i]['low'] < df_4h.iloc[i-2]['low'] and
+                df_4h.iloc[i]['low'] < df_4h.iloc[i+1]['low'] and
+                df_4h.iloc[i]['low'] < df_4h.iloc[i+2]['low']):
+                lows.append((i, df_4h.iloc[i]['low']))
+                if len(lows) >= 6:
+                    lows.pop(0)  # Keep only the 6 most recent
+        
+        # Need at least 4 swing points to analyze structure
+        if len(highs) < 4 or len(lows) < 4:
+            return None
+            
+        # Sort swing points by index
+        highs.sort(key=lambda x: x[0])
+        lows.sort(key=lambda x: x[0])
+        
+        # Check for higher highs and higher lows (uptrend)
+        is_uptrend = (highs[-1][1] > highs[-2][1] > highs[-3][1] and 
+                      lows[-1][1] > lows[-2][1] > lows[-3][1])
+                      
+        # Check for lower highs and lower lows (downtrend)
+        is_downtrend = (highs[-1][1] < highs[-2][1] < highs[-3][1] and 
+                       lows[-1][1] < lows[-2][1] < lows[-3][1])
+        
+        # Check for a potential structure break
+        structure_broken = False
+        structure_direction = None
+        
+        # Bullish structure break (break of a previous higher low)
+        if (not is_uptrend and not is_downtrend and 
+            current_price > lows[-2][1] and 
+            lows[-1][1] < lows[-2][1]):
+            structure_broken = True
+            structure_direction = "bullish"
+            
+        # Bearish structure break (break of a previous higher high)
+        if (not is_uptrend and not is_downtrend and 
+            current_price < highs[-2][1] and 
+            highs[-1][1] > highs[-2][1]):
+            structure_broken = True
+            structure_direction = "bearish"
+            
+        # Look for a tradable setup based on the structure
+        if is_uptrend or (structure_broken and structure_direction == "bullish"):
+            # Identify a recent pullback in an uptrend
+            recent_low = min(df_4h.iloc[-5:]['low'])
+            recent_low_idx = df_4h.iloc[-5:]['low'].idxmin()
+            
+            # If price has pulled back to a reasonable level but still respects structure
+            if (current_price > recent_low * 1.002 and 
+                current_price < recent_low * 1.01 and
+                recent_low > lows[-2][1]):
+                
+                # ATR for stop and target calculations
+                atr = df_4h.iloc[-1].get('atr', 0.1)
+                
+                # Calculate entry, stop and targets
+                entry_zone = (current_price, current_price + atr * 0.3)
+                stop_loss = min(recent_low - atr * 0.5, lows[-2][1] - atr * 0.2)
+                
+                # First target is the next structure high
+                target1 = highs[-1][1]
+                # Second target is an extension based on the range
+                target2 = target1 + (target1 - stop_loss)
+                
+                targets = [target1, target2]
+                
+                # Calculate risk/reward
+                risk_reward = TradeSetup.calculate_risk_reward(
+                    entry=sum(entry_zone) / 2,
+                    stop=stop_loss,
+                    target=targets[0]
+                )
+                
+                # Only proceed if risk/reward is reasonable
+                if risk_reward >= 1.5:
+                    # Generate rationale based on structure type
+                    rationale = ""
+                    if is_uptrend:
+                        rationale = (
+                            f"Strong uptrend structure with higher highs and higher lows. "
+                            f"Price has pulled back to {recent_low:.2f} and now showing signs of continuation. "
+                            f"Entry after pullback with first target at previous high of {target1:.2f}. "
+                            f"Risk/reward: {risk_reward:.2f}."
+                        )
+                    else:
+                        rationale = (
+                            f"Bullish structure break detected. Previous structure low {lows[-2][1]:.2f} has been "
+                            f"broken, signaling a potential trend change. "
+                            f"Entry on first pullback with stop below recent swing low. "
+                            f"Risk/reward: {risk_reward:.2f}."
+                        )
+                    
+                    # Determine confidence level
+                    confidence = 80 if is_uptrend else 70
+                    
+                    # Return the trade setup
+                    return TradeSetup(
+                        instrument=self.instrument,
+                        direction="Long",
+                        entry_zone=entry_zone,
+                        stop_loss=stop_loss,
+                        targets=targets,
+                        risk_reward=risk_reward,
+                        confidence=confidence,
+                        rationale=rationale,
+                        strategy=f"{self.name}_Structure"
+                    )
+                    
+        elif is_downtrend or (structure_broken and structure_direction == "bearish"):
+            # Identify a recent bounce in a downtrend
+            recent_high = max(df_4h.iloc[-5:]['high'])
+            recent_high_idx = df_4h.iloc[-5:]['high'].idxmax()
+            
+            # If price has bounced to a reasonable level but still respects structure
+            if (current_price < recent_high * 0.998 and 
+                current_price > recent_high * 0.99 and
+                recent_high < highs[-2][1]):
+                
+                # ATR for stop and target calculations
+                atr = df_4h.iloc[-1].get('atr', 0.1)
+                
+                # Calculate entry, stop and targets
+                entry_zone = (current_price - atr * 0.3, current_price)
+                stop_loss = max(recent_high + atr * 0.5, highs[-2][1] + atr * 0.2)
+                
+                # First target is the next structure low
+                target1 = lows[-1][1]
+                # Second target is an extension based on the range
+                target2 = target1 - (stop_loss - target1)
+                
+                targets = [target1, target2]
+                
+                # Calculate risk/reward
+                risk_reward = TradeSetup.calculate_risk_reward(
+                    entry=sum(entry_zone) / 2,
+                    stop=stop_loss,
+                    target=targets[0]
+                )
+                
+                # Only proceed if risk/reward is reasonable
+                if risk_reward >= 1.5:
+                    # Generate rationale based on structure type
+                    rationale = ""
+                    if is_downtrend:
+                        rationale = (
+                            f"Strong downtrend structure with lower highs and lower lows. "
+                            f"Price has bounced to {recent_high:.2f} and now showing signs of continuation. "
+                            f"Entry after bounce with first target at previous low of {target1:.2f}. "
+                            f"Risk/reward: {risk_reward:.2f}."
+                        )
+                    else:
+                        rationale = (
+                            f"Bearish structure break detected. Previous structure high {highs[-2][1]:.2f} has been "
+                            f"broken, signaling a potential trend change. "
+                            f"Entry on first bounce with stop above recent swing high. "
+                            f"Risk/reward: {risk_reward:.2f}."
+                        )
+                    
+                    # Determine confidence level
+                    confidence = 80 if is_downtrend else 70
+                    
+                    # Return the trade setup
+                    return TradeSetup(
+                        instrument=self.instrument,
+                        direction="Short",
+                        entry_zone=entry_zone,
+                        stop_loss=stop_loss,
+                        targets=targets,
+                        risk_reward=risk_reward,
+                        confidence=confidence,
+                        rationale=rationale,
+                        strategy=f"{self.name}_Structure"
+                    )
+                    
+        return None
     
     def _check_upcoming_events(self, df_1h, calendar):
         """Check for upcoming key economic events that could impact JPY"""
