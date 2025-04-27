@@ -58,40 +58,32 @@ class TradingAgent:
             self.start_real_time_monitoring()
     
     def start_real_time_monitoring(self):
-        """Start real-time price monitoring for supported symbols"""
+        """Start real-time monitoring of the markets"""
         if self.real_time_running:
-            self.logger.warning("Real-time monitoring already running")
+            self.logger.info("Real-time monitoring already running")
             return
             
+        self.logger.info("Starting real-time market monitoring")
         self.real_time_running = True
         
-        # Get all symbols from strategies
-        symbols = []
+        # Get all symbols from the strategies
         for strategy in self.strategies:
-            if hasattr(strategy, 'instrument'):
-                symbols.append(strategy.instrument)
-            elif hasattr(strategy, 'instruments'):
-                symbols.extend(strategy.instruments)
-        
-        # Remove duplicates
-        self.watched_symbols = set(symbols)
+            if hasattr(strategy, 'instruments'):
+                self.watched_symbols.update(strategy.instruments)
+                
         self.logger.info(f"Watching symbols: {', '.join(self.watched_symbols)}")
         
-        # Subscribe to real-time updates with error handling
-        successful_subscriptions = 0
+        # Subscribe to real-time updates for all watched symbols
         for symbol in self.watched_symbols:
-            try:
-                if self.data_fetcher.subscribe_to_real_time(symbol, self._on_price_update):
-                    successful_subscriptions += 1
-                else:
-                    self.logger.warning(f"Failed to subscribe to {symbol}")
-            except Exception as e:
-                self.logger.error(f"Error subscribing to {symbol}: {e}")
+            success = self.data_fetcher.subscribe_to_real_time(symbol, self._on_price_update)
+            if success:
+                self.logger.info(f"Successfully subscribed to real-time updates for {symbol}")
+            else:
+                self.logger.warning(f"Failed to subscribe to real-time updates for {symbol}")
         
-        self.logger.info(f"Successfully subscribed to {successful_subscriptions} out of {len(self.watched_symbols)} symbols")
-        
-        # Start real-time thread
-        self.real_time_thread = threading.Thread(target=self._real_time_loop, daemon=True)
+        # Start a thread to run the real-time analysis
+        self.real_time_thread = threading.Thread(target=self._real_time_monitoring_loop)
+        self.real_time_thread.daemon = True
         self.real_time_thread.start()
         
         self.logger.info("Real-time monitoring started")
@@ -113,17 +105,38 @@ class TradingAgent:
             
         self.logger.info("Real-time monitoring stopped")
     
-    def _real_time_loop(self):
-        """Background thread for real-time analysis"""
-        while self.real_time_running:
-            try:
-                # Run quick analysis
-                self._run_real_time_analysis()
+    def _real_time_monitoring_loop(self):
+        """Main loop for real-time monitoring"""
+        try:
+            self.logger.info("Real-time monitoring loop started")
+            last_full_analysis = time.time()
+            last_crypto_check = time.time()
+            
+            while self.real_time_running:
+                current_time = time.time()
                 
-                # Sleep until next update
-                time.sleep(self.update_interval)
-            except Exception as e:
-                self.logger.error(f"Error in real-time loop: {e}")
+                # Run a quick analysis every update_interval seconds
+                if current_time - last_full_analysis >= self.update_interval:
+                    try:
+                        self.logger.info("Running periodic full analysis")
+                        self._run_real_time_analysis()
+                        last_full_analysis = current_time
+                    except Exception as e:
+                        self.logger.error(f"Error in periodic full analysis: {e}")
+                
+                # Run a more frequent check on crypto pairs due to their volatility
+                # Check every 15 seconds for crypto-specific alerts
+                if current_time - last_crypto_check >= 15:
+                    try:
+                        self._check_crypto_volatility()
+                        last_crypto_check = current_time
+                    except Exception as e:
+                        self.logger.error(f"Error in crypto volatility check: {e}")
+                
+                time.sleep(1)  # Sleep to prevent CPU overuse
+        except Exception as e:
+            self.logger.error(f"Error in real-time monitoring loop: {e}")
+            self.real_time_running = False
     
     def _on_price_update(self, symbol, price, volume, timestamp):
         """Callback for real-time price updates"""
@@ -536,4 +549,75 @@ class TradingAgent:
             return False
         except Exception as e:
             self.logger.error(f"Error subscribing to {symbol}: {e}")
-            return False 
+            return False
+
+    def _check_crypto_volatility(self):
+        """Check for sudden volatility in crypto assets"""
+        try:
+            # Get crypto symbols
+            crypto_symbols = [s for s in self.watched_symbols if s.endswith('USD')]
+            if not crypto_symbols:
+                return
+                
+            # Get current prices for all crypto symbols
+            current_prices = {}
+            last_prices = getattr(self, '_last_crypto_prices', {})
+            self._last_crypto_prices = {}
+            
+            for symbol in crypto_symbols:
+                price_data = self.data_fetcher.get_real_time_price(symbol)
+                if price_data:
+                    current_price = price_data['price']
+                    current_prices[symbol] = current_price
+                    self._last_crypto_prices[symbol] = current_price
+                    
+                    # Check for significant price changes (>1% in 15 seconds)
+                    if symbol in last_prices:
+                        pct_change = (current_price / last_prices[symbol] - 1) * 100
+                        if abs(pct_change) >= 1.0:
+                            direction = "up" if pct_change > 0 else "down"
+                            self.logger.warning(
+                                f"CRYPTO VOLATILITY ALERT: {symbol} moved {direction} {abs(pct_change):.2f}% in the last 15 seconds. "
+                                f"Price: {current_price:.5f}"
+                            )
+            
+            # Check if we have any active crypto trade setups
+            if hasattr(self, 'recent_trade_setups') and self.recent_trade_setups:
+                crypto_setups = {name: setup for name, setup in self.recent_trade_setups.items() 
+                              if setup and setup.instrument in crypto_symbols}
+                
+                for setup_name, setup in crypto_setups.items():
+                    symbol = setup.instrument
+                    if symbol not in current_prices:
+                        continue
+                        
+                    current_price = current_prices[symbol]
+                    
+                    # Enhanced alerts specific to crypto
+                    # Check entry zone with more sensitivity
+                    if setup.entry_zone and setup.entry_zone[0] <= current_price <= setup.entry_zone[1]:
+                        self.logger.info(
+                            f"CRYPTO ENTRY ALERT: {symbol} in entry zone {setup.entry_zone[0]:.5f}-{setup.entry_zone[1]:.5f}. "
+                            f"Current price: {current_price:.5f}"
+                        )
+                    
+                    # Check stop loss with high priority
+                    if setup.stop_loss:
+                        if (setup.direction == "Long" and current_price <= setup.stop_loss) or \
+                           (setup.direction == "Short" and current_price >= setup.stop_loss):
+                            self.logger.warning(
+                                f"CRYPTO STOP LOSS ALERT: {symbol} hit stop loss at {setup.stop_loss:.5f}. "
+                                f"Current price: {current_price:.5f}"
+                            )
+                    
+                    # Check for targets with precise alerts
+                    if setup.targets:
+                        for i, target in enumerate(setup.targets):
+                            if (setup.direction == "Long" and current_price >= target) or \
+                               (setup.direction == "Short" and current_price <= target):
+                                self.logger.info(
+                                    f"CRYPTO TARGET ALERT: {symbol} reached target {i+1} at {target:.5f}. "
+                                    f"Current price: {current_price:.5f}"
+                                )
+        except Exception as e:
+            self.logger.error(f"Error in crypto volatility check: {e}") 

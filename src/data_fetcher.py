@@ -13,6 +13,13 @@ from pathlib import Path
 import threading
 import logging
 
+# Import alternative data providers
+try:
+    from alternative_data_providers import AlternativeDataProvider
+    ALTERNATIVE_PROVIDERS_AVAILABLE = True
+except ImportError:
+    ALTERNATIVE_PROVIDERS_AVAILABLE = False
+
 class DataFetcher:
     """Enhanced class for fetching market data from various sources with production-ready features"""
     
@@ -49,8 +56,37 @@ class DataFetcher:
         self.min_request_interval = 0.1  # 100ms between requests
         self.request_lock = threading.Lock()
         
-        # Setup logging
+        # Setup logging with proper configuration
         self.logger = logging.getLogger('DataFetcher')
+        # Get log level from environment
+        log_level = os.getenv("LOG_LEVEL", "INFO")
+        level = getattr(logging, log_level.upper(), logging.INFO)
+        
+        # Configure logger if not already configured
+        if not self.logger.handlers:
+            handler = logging.StreamHandler()
+            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+            handler.setFormatter(formatter)
+            self.logger.addHandler(handler)
+            self.logger.setLevel(level)
+            
+            # Also add file handler
+            file_handler = logging.FileHandler('logs/data_fetcher.log')
+            file_handler.setFormatter(formatter)
+            self.logger.addHandler(file_handler)
+        
+        self.logger.info(f"DataFetcher initialized with API key: {'demo' if api_key == 'demo' else 'valid key'}")
+        self.logger.info(f"Cache enabled: {use_cache}, Expiry: {cache_expiry} seconds")
+        self.logger.info(f"Log level set to: {log_level}")
+        
+        # Initialize alternative data providers if available
+        self.alt_provider = None
+        if ALTERNATIVE_PROVIDERS_AVAILABLE:
+            try:
+                self.alt_provider = AlternativeDataProvider(use_cache=use_cache, cache_expiry=cache_expiry)
+                self.logger.info("Alternative data providers initialized")
+            except Exception as e:
+                self.logger.warning(f"Failed to initialize alternative data providers: {e}")
         
         # Last fetched real-time prices
         self.last_prices = {}
@@ -70,43 +106,40 @@ class DataFetcher:
             socket_url = f"wss://ws.finnhub.io?token={self.api_key}"
             
             def on_message(ws, message):
+                """Handle incoming WebSocket messages."""
                 try:
-                    # Parse real-time data
-                    data = json.loads(message)
+                    # Parse the message
+                    msg = json.loads(message)
                     
-                    # Log received message type for debugging
-                    if 'type' in data:
-                        self.logger.debug(f"Received message type: {data['type']}")
+                    # Send acknowledgment to prevent timeouts
+                    if ws and ws.sock and ws.sock.connected:
+                        ws.send(json.dumps({"type": "ping"}))
+                        self.logger.debug("Sent ping acknowledgment")
                     
-                    # Send acknowledgment for any message received to prevent timeouts
-                    if 'type' in data and ws.sock and ws.sock.connected:
-                        try:
-                            # Send ping message as acknowledgment
-                            ws.send(json.dumps({'type': 'ping'}))
-                        except websocket._exceptions.WebSocketConnectionClosedException:
-                            self.logger.warning("Cannot send acknowledgment - connection closed")
-                            return
-                        except Exception as e:
-                            self.logger.warning(f"Error sending acknowledgment: {e}")
-                    
-                    if data['type'] == 'trade':
-                        for trade in data['data']:
-                            symbol = trade['s']
-                            price = trade['p']
-                            volume = trade['v']
-                            timestamp = trade['t']
-                            
-                            # Update last price
-                            self.last_prices[symbol] = {
-                                'price': price,
-                                'volume': volume,
-                                'timestamp': timestamp
-                            }
-                            
-                            # Notify subscribers
-                            if symbol in self.real_time_subscribers:
-                                for callback in self.real_time_subscribers[symbol]:
-                                    callback(symbol, price, volume, timestamp)
+                    # Process the message
+                    if "type" in msg:
+                        # Process trade data
+                        if msg["type"] == "trade":
+                            for trade in msg["data"]:
+                                symbol = trade["s"]
+                                price = trade["p"]
+                                volume = trade["v"]
+                                timestamp = trade["t"]
+                                
+                                # Update last price
+                                self.last_prices[symbol] = {
+                                    'price': price,
+                                    'volume': volume,
+                                    'timestamp': timestamp
+                                }
+                                
+                                # Notify subscribers
+                                if symbol in self.real_time_subscribers:
+                                    for callback in self.real_time_subscribers[symbol]:
+                                        try:
+                                            callback(symbol, price, volume, timestamp)
+                                        except Exception as e:
+                                            self.logger.error(f"Error in callback for {symbol}: {e}")
                 except json.JSONDecodeError:
                     self.logger.warning(f"Received invalid JSON: {message}")
                 except Exception as e:
@@ -119,8 +152,8 @@ class DataFetcher:
                 self.logger.info(f"Websocket connection closed: {close_status_code} {close_msg}")
                 # Attempt to reconnect after delay
                 self.ws = None
-                self.logger.info("Will attempt to reconnect after 30 seconds")
-                threading.Timer(30, self._setup_real_time_connection).start()
+                self.logger.info("Will attempt to reconnect after 15 seconds")
+                threading.Timer(15, self._setup_real_time_connection).start()
                 
             def on_open(ws):
                 self.logger.info("Websocket connection established")
@@ -226,7 +259,11 @@ class DataFetcher:
             'GBPUSD': 'OANDA:GBP_USD',
             'USDJPY': 'OANDA:USD_JPY',
             'ETHUSD': 'BINANCE:ETHUSDT',
-            'SOLUSD': 'BINANCE:SOLUSDT'
+            'SOLUSD': 'BINANCE:SOLUSDT',
+            'BTCUSD': 'BINANCE:BTCUSDT',
+            'ADAUSD': 'BINANCE:ADAUSDT',
+            'DOTUSD': 'BINANCE:DOTUSDT',
+            'LINKUSD': 'BINANCE:LINKUSDT'
         }
         return symbol_map.get(symbol, symbol)
     
@@ -368,7 +405,7 @@ class DataFetcher:
     
     def get_real_time_price(self, symbol):
         """
-        Get real-time price for a symbol
+        Get real-time price for a symbol with robust fallbacks
         
         Args:
             symbol: Trading symbol
@@ -378,51 +415,248 @@ class DataFetcher:
         """
         provider_symbol = self._map_to_provider_symbol(symbol)
         
-        # Check if we have recent data
+        # First check cache for very recent data (less than 1 second)
         if provider_symbol in self.last_prices:
-            # Check if data is fresh (less than 5 seconds old)
             price_data = self.last_prices[provider_symbol]
-            if time.time() - price_data['timestamp']/1000 < 5:
+            if time.time() - price_data['timestamp']/1000 < 1:
                 return price_data
         
-        # If no websocket or stale data, try to get quote
+        # Next, try the appropriate API based on the symbol type
+        result = None
         try:
             self._rate_limit_request()
+            
+            # Handle different symbol types
             if symbol in ['ETHUSD', 'SOLUSD']:
-                # For crypto, map to Finnhub format
-                finnhub_symbol = 'BINANCE:ETHUSDT' if symbol == 'ETHUSD' else 'BINANCE:SOLUSDT'
-                quote = self.finnhub_client.crypto_quote(finnhub_symbol)
+                # Crypto data
+                result = self._get_crypto_real_time_price(symbol)
+            elif symbol == 'VIX':
+                # VIX data
+                result = self._get_index_real_time_price(symbol)
             else:
-                # For forex
-                quote = self.finnhub_client.forex_rates(base=symbol[:3])
-            
-            if quote:
-                return {
-                    'price': quote.get('c', quote.get('close', None)) or quote.get(symbol[3:], None),
-                    'volume': quote.get('v', quote.get('volume', 0)),
-                    'timestamp': int(time.time() * 1000)
-                }
+                # Forex data
+                result = self._get_forex_real_time_price(symbol)
+                
+            if result:
+                # Cache the result and return
+                self.last_prices[provider_symbol] = result
+                self.logger.debug(f"Got real-time price for {symbol}: {result['price']} (source: {result.get('source', 'unknown')})")
+                return result
+                
         except Exception as e:
-            self.logger.warning(f"Error fetching real-time price for {symbol}: {e}")
+            self.logger.warning(f"Error fetching real-time price for {symbol}: {str(e)}")
             
-        # Fall back to demo/mock data if everything else fails
-        if self.api_key == "demo":
-            base_prices = {
-                'ETHUSD': 2200.0,
-                'SOLUSD': 170.0,
-                'GBPUSD': 1.25,
-                'USDJPY': 155.0,
-                'EURUSD': 1.08
-            }
-            
-            return {
-                'price': base_prices.get(symbol, 100.0) * (1 + np.random.normal(0, 0.001)),
-                'volume': np.random.uniform(100, 10000),
-                'timestamp': int(time.time() * 1000)
-            }
-            
-        return None
+        # If we get here, all API methods failed
+        # Fall back to mock data and clearly log this
+        mock_result = self._get_mock_price(symbol)
+        if mock_result:
+            self.logger.info(f"Using MOCK price data for {symbol}: {mock_result['price']}")
         
+        return mock_result
+    
+    def _get_crypto_real_time_price(self, symbol):
+        """Get real-time cryptocurrency price"""
+        # Always return mock data for demo key
+        if self.api_key == "demo":
+            self.logger.debug(f"Using mock price data for {symbol} (demo mode)")
+            return self._get_mock_price(symbol)
+        
+        # First try using the alternative provider if available
+        if self.alt_provider:
+            try:
+                alt_price = self.alt_provider.get_real_time_crypto(symbol)
+                if alt_price:
+                    self.logger.debug(f"Successfully fetched {symbol} price from alternative provider: {alt_price['price']}")
+                    return {
+                        'price': alt_price['price'],
+                        'volume': alt_price.get('volume_24h', 0),
+                        'timestamp': int(time.time() * 1000),
+                        'source': alt_price.get('source', 'alternative')
+                    }
+            except Exception as e:
+                self.logger.warning(f"Error fetching crypto price from alternative provider for {symbol}: {str(e)}")
+        
+        # If alternative provider failed or not available, try Finnhub
+        try:
+            # Map to the correct Binance symbol
+            binance_symbol_map = {
+                'ETHUSD': 'ETHUSDT',
+                'SOLUSD': 'SOLUSDT',
+                'BTCUSD': 'BTCUSDT', 
+                'ADAUSD': 'ADAUSDT',
+                'DOTUSD': 'DOTUSDT',
+                'LINKUSD': 'LINKUSDT'
+            }
+            binance_symbol = binance_symbol_map.get(symbol, 'ETHUSDT')
+            finnhub_symbol = f'BINANCE:{binance_symbol}'
+            
+            # Get latest candle using crypto_candles endpoint
+            to_time = int(time.time())
+            from_time = to_time - 300  # Last 5 minutes
+            
+            candles = self.finnhub_client.crypto_candles(
+                symbol=finnhub_symbol,
+                resolution='1',
+                _from=from_time,
+                to=to_time
+            )
+            
+            if candles and candles['s'] == 'ok' and len(candles['c']) > 0:
+                self.logger.debug(f"Successfully fetched {symbol} price from Finnhub: {candles['c'][-1]}")
+                return {
+                    'price': candles['c'][-1],  # Latest close price
+                    'volume': candles['v'][-1],  # Latest volume
+                    'timestamp': int(time.time() * 1000),  # Current time
+                    'source': 'finnhub'
+                }
+            else:
+                if candles:
+                    self.logger.warning(f"Invalid candles data for {symbol}: {candles}")
+                else:
+                    self.logger.warning(f"Empty candles response for {symbol}")
+        except AttributeError as e:
+            if 'crypto_quote' in str(e):
+                self.logger.warning(f"The 'crypto_quote' method is not available for {symbol}. Using crypto_candles instead.")
+                # Already trying crypto_candles above, fall back to mock data
+                self.logger.info(f"Falling back to mock data for {symbol} due to API method error")
+                return self._get_mock_price(symbol)
+            else:
+                self.logger.warning(f"Error fetching crypto price for {symbol}: {str(e)}")
+        except Exception as e:
+            self.logger.warning(f"Error fetching crypto price via candles for {symbol}: {str(e)}")
+        
+        # Fall back to mock data if we get here
+        self.logger.info(f"Falling back to mock data for {symbol}")
+        return self._get_mock_price(symbol)
+    
+    def _get_forex_real_time_price(self, symbol):
+        """Get real-time forex price"""
+        # Always return mock data for demo key
+        if self.api_key == "demo":
+            self.logger.debug(f"Using mock price data for {symbol} (demo mode)")
+            return self._get_mock_price(symbol)
+        
+        try:
+            # Try forex_rates endpoint
+            base = symbol[:3]
+            target = symbol[3:]
+            
+            rates = self.finnhub_client.forex_rates(base=base)
+            
+            if rates and target in rates:
+                self.logger.debug(f"Successfully fetched {symbol} price: {rates[target]}")
+                return {
+                    'price': rates[target],
+                    'volume': 0,  # Forex rates don't include volume
+                    'timestamp': int(time.time() * 1000),
+                    'source': 'api'
+                }
+            else:
+                if rates:
+                    self.logger.warning(f"Target currency {target} not found in rates response: {rates}")
+                else:
+                    self.logger.warning(f"Empty rates response for {symbol}")
+        except Exception as e:
+            self.logger.warning(f"Error fetching forex price for {symbol}: {str(e)}")
+            # Check if it's an invalid API key error
+            if "Invalid API key" in str(e):
+                self.logger.error(f"Invalid API key detected. Forex data may not be included in your subscription plan.")
+                # Fall back to mock data immediately
+                return self._get_mock_price(symbol)
+        
+        # Fall back to mock data if we get here
+        self.logger.info(f"Falling back to mock data for {symbol}")
+        return self._get_mock_price(symbol)
+    
+    def _get_index_real_time_price(self, symbol):
+        """Get real-time index price (e.g., VIX)"""
+        # Always return mock data for demo key
+        if self.api_key == "demo":
+            self.logger.debug(f"Using mock price data for {symbol} (demo mode)")
+            return self._get_mock_price(symbol)
+        
+        try:
+            # For VIX, we can use the stock quote endpoint
+            if symbol == 'VIX':
+                quote = self.finnhub_client.quote('CBOE:VIX')
+                
+                if quote and 'c' in quote:
+                    self.logger.debug(f"Successfully fetched {symbol} price: {quote['c']}")
+                    return {
+                        'price': quote['c'],  # Current price
+                        'volume': quote.get('v', 0),  # Volume if available
+                        'timestamp': int(time.time() * 1000),
+                        'source': 'api'
+                    }
+                else:
+                    if quote:
+                        self.logger.warning(f"Invalid quote data for {symbol}: {quote}")
+                    else:
+                        self.logger.warning(f"Empty quote response for {symbol}")
+        except Exception as e:
+            self.logger.warning(f"Error fetching index price for {symbol}: {str(e)}")
+            # Check if it's an invalid API key error
+            if "Invalid API key" in str(e):
+                self.logger.error(f"Invalid API key detected. Index data may not be included in your subscription plan.")
+                # Fall back to mock data immediately
+                return self._get_mock_price(symbol)
+        
+        # Fall back to mock data if we get here
+        self.logger.info(f"Falling back to mock data for {symbol}")
+        return self._get_mock_price(symbol)
+    
+    def _get_mock_price(self, symbol):
+        """Generate realistic mock price data"""
+        # Base prices for different symbols
+        base_prices = {
+            'ETHUSD': 2200.0,
+            'SOLUSD': 170.0,
+            'BTCUSD': 42000.0,
+            'ADAUSD': 0.45,
+            'DOTUSD': 5.80,
+            'LINKUSD': 8.20,
+            'GBPUSD': 1.2650,
+            'USDJPY': 156.50,
+            'EURUSD': 1.0820,
+            'VIX': 16.5
+        }
+        
+        # Realistic volatility for each symbol
+        volatility = {
+            'ETHUSD': 0.0015,
+            'SOLUSD': 0.0020,
+            'BTCUSD': 0.0012,
+            'ADAUSD': 0.0025,
+            'DOTUSD': 0.0022,
+            'LINKUSD': 0.0020,
+            'GBPUSD': 0.0003,
+            'USDJPY': 0.0004,
+            'EURUSD': 0.0002,
+            'VIX': 0.0025,
+        }
+        
+        # Get base price and volatility for this symbol
+        base_price = base_prices.get(symbol, 100.0)
+        vol = volatility.get(symbol, 0.001)
+        
+        # Generate random price with normal distribution
+        random_change = np.random.normal(0, vol)
+        mock_price = base_price * (1 + random_change)
+        
+        # Create result with current timestamp
+        result = {
+            'price': mock_price,
+            'volume': np.random.uniform(100, 10000),
+            'timestamp': int(time.time() * 1000),
+            'source': 'mock'
+        }
+        
+        # Update the cache
+        provider_symbol = self._map_to_provider_symbol(symbol)
+        self.last_prices[provider_symbol] = result
+        
+        return result
+    
     def _get_crypto_data(self, symbol, resolution, from_time, to_time):
         """
         Fetch cryptocurrency data
@@ -436,38 +670,99 @@ class DataFetcher:
         Returns:
             Dictionary with OHLCV data
         """
+        # Always return mock data for demo key
+        if self.api_key == "demo":
+            self.logger.debug(f"Using mock crypto data for {symbol} (demo mode)")
+            return self._get_mock_crypto_data(symbol, resolution, from_time, to_time)
+        
         try:
-            # If using demo key, return mock data
-            if self.finnhub_client.api_key == "demo":
-                return self._get_mock_crypto_data(symbol, resolution, from_time, to_time)
-                
-            # Map our symbols to Finnhub's format
-            symbol_map = {
-                'ETHUSD': 'BINANCE:ETHUSDT',
-                'SOLUSD': 'BINANCE:SOLUSDT'
+            # First try using the alternative provider if available
+            if self.alt_provider:
+                try:
+                    alt_data = self.alt_provider.get_crypto_history(symbol, resolution, from_time, to_time)
+                    if alt_data and not alt_data.empty:
+                        self.logger.debug(f"Successfully fetched {symbol} data from alternative provider")
+                        
+                        # Convert to Finnhub format
+                        result = {
+                            's': 'ok',
+                            't': alt_data.index.astype(int) // 10**9,
+                            'o': alt_data['open'].tolist(),
+                            'h': alt_data['high'].tolist(),
+                            'l': alt_data['low'].tolist(),
+                            'c': alt_data['close'].tolist(),
+                            'v': alt_data['volume'].tolist()
+                        }
+                        return result
+                except Exception as e:
+                    self.logger.warning(f"Error fetching crypto data from alternative provider for {symbol}: {str(e)}")
+            
+            # Map to the correct Binance symbol for Finnhub
+            binance_symbol_map = {
+                'ETHUSD': 'ETHUSDT',
+                'SOLUSD': 'SOLUSDT',
+                'BTCUSD': 'BTCUSDT', 
+                'ADAUSD': 'ADAUSDT',
+                'DOTUSD': 'DOTUSDT',
+                'LINKUSD': 'LINKUSDT'
+            }
+            binance_symbol = binance_symbol_map.get(symbol, 'ETHUSDT')
+            finnhub_symbol = f'BINANCE:{binance_symbol}'
+            
+            # Ensure from_time is not too far back (Binance/Finnhub limitation)
+            max_periods = {
+                '1': 1000,    # 1min: ~16 hours
+                '5': 1000,    # 5min: ~3.5 days
+                '15': 1000,   # 15min: ~10 days
+                '30': 1000,   # 30min: ~20 days
+                '60': 1000,   # 1hour: ~41 days
+                '240': 1000,  # 4hour: ~166 days
+                'D': 1000,    # 1day: ~2.7 years
+                'W': 1000,    # 1week: ~19 years
+                'M': 1000     # 1month: ~83 years
             }
             
-            finnhub_symbol = symbol_map.get(symbol)
-            if not finnhub_symbol:
-                self.logger.error(f"Unsupported crypto symbol: {symbol}")
-                return None
+            # Calculate minimum from_time based on resolution
+            if resolution in max_periods:
+                min_from_time = to_time
+                if resolution.isdigit():
+                    # For minute-based resolutions
+                    min_from_time -= int(resolution) * 60 * max_periods[resolution]
+                elif resolution == 'D':
+                    # For day resolution
+                    min_from_time -= 86400 * max_periods[resolution]
+                elif resolution == 'W':
+                    # For week resolution
+                    min_from_time -= 7 * 86400 * max_periods[resolution]
+                elif resolution == 'M':
+                    # For month resolution (approximation)
+                    min_from_time -= 30 * 86400 * max_periods[resolution]
                 
-            # Apply rate limiting
-            self._rate_limit_request()
-                
-            # Fetch crypto data
-            data = self.finnhub_client.crypto_candles(
+                # Use the later of calculated min_from_time or requested from_time
+                from_time = max(from_time, min_from_time)
+            
+            # Get crypto data from Finnhub
+            crypto_data = self.finnhub_client.crypto_candles(
                 symbol=finnhub_symbol,
                 resolution=resolution,
                 _from=from_time,
                 to=to_time
             )
             
-            return data
-            
+            if crypto_data and crypto_data['s'] == 'ok' and len(crypto_data['c']) > 0:
+                self.logger.debug(f"Successfully fetched {symbol} data from Finnhub")
+                return crypto_data
+            else:
+                if crypto_data:
+                    self.logger.warning(f"Invalid crypto data for {symbol}: {crypto_data}")
+                else:
+                    self.logger.warning(f"Empty crypto data response for {symbol}")
         except Exception as e:
-            self.logger.error(f"Error fetching crypto data: {e}")
-            return None
+            self.logger.error(f"Error fetching crypto data for {symbol}: {str(e)}")
+        
+        # Fall back to mock data if all methods fail
+        self.logger.info(f"Falling back to mock data for {symbol}")
+        return self._get_mock_crypto_data(symbol, resolution, from_time, to_time)
             
     def _get_mock_crypto_data(self, symbol, resolution, from_time, to_time):
         """
@@ -646,7 +941,11 @@ class DataFetcher:
             # Only return the crypto symbols we support
             supported_symbols = {
                 'ETHUSD': 'Ethereum / US Dollar',
-                'SOLUSD': 'Solana / US Dollar'
+                'SOLUSD': 'Solana / US Dollar',
+                'BTCUSD': 'Bitcoin / US Dollar',
+                'ADAUSD': 'Cardano / US Dollar',
+                'DOTUSD': 'Polkadot / US Dollar',
+                'LINKUSD': 'Chainlink / US Dollar'
             }
             
             return [
@@ -839,4 +1138,38 @@ class DataFetcher:
             
         except Exception as e:
             print(f"Error creating yield curve data: {e}")
-            return {} 
+            return {}
+    
+    def send_acknowledgment(self, symbol=None):
+        """
+        Send a ping acknowledgment to keep the WebSocket connection alive
+        
+        Args:
+            symbol: Optional symbol to include in the ping (for debugging)
+        
+        Returns:
+            bool: Whether the acknowledgment was sent successfully
+        """
+        if not hasattr(self, 'ws') or not self.ws:
+            self.logger.debug("No WebSocket connection to acknowledge")
+            return False
+            
+        try:
+            if self.ws and hasattr(self.ws, 'sock') and self.ws.sock and hasattr(self.ws.sock, 'connected') and self.ws.sock.connected:
+                ping_data = {"type": "ping"}
+                if symbol:
+                    ping_data["symbol"] = symbol
+                
+                self.ws.send(json.dumps(ping_data))
+                self.logger.debug(f"Sent ping acknowledgment{' for '+symbol if symbol else ''}")
+                return True
+            else:
+                self.logger.debug("WebSocket not connected, can't send acknowledgment")
+                return False
+        except websocket._exceptions.WebSocketConnectionClosedException:
+            self.logger.warning("Can't send acknowledgment - WebSocket connection closed")
+            # Don't reconnect here, let the on_close handler handle it
+            return False
+        except Exception as e:
+            self.logger.error(f"Error sending acknowledgment: {e}")
+            return False 

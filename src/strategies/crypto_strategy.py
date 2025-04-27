@@ -6,7 +6,7 @@ from src.models.sentiment_analysis import NewsAnalyzer
 
 class CryptoStrategy:
     """
-    Cryptocurrency Trading Strategy for SOL/USD and ETH/USD
+    Cryptocurrency Trading Strategy for major crypto pairs
     
     Timeframe: 15m-1h
     Indicators: Moving Averages, RSI, Bollinger Bands, Price Prediction Model
@@ -16,7 +16,8 @@ class CryptoStrategy:
         """Initialize strategy with data fetcher"""
         self.data_fetcher = data_fetcher
         self.name = "Crypto_Strategy"
-        self.instruments = ["SOLUSD", "ETHUSD"]
+        # Add more cryptocurrency pairs
+        self.instruments = ["SOLUSD", "ETHUSD", "BTCUSD", "ADAUSD", "DOTUSD", "LINKUSD"]
         
         # Initialize price prediction models
         self.price_models = {}
@@ -57,10 +58,10 @@ class CryptoStrategy:
         Returns:
             TradeSetup object with trade details or no-trade reason
         """
-        # Get data for different timeframes
-        df_15m = self.data_fetcher.get_forex_data(instrument, resolution='15', count=100)
-        df_1h = self.data_fetcher.get_forex_data(instrument, resolution='60', count=48)
-        df_4h = self.data_fetcher.get_forex_data(instrument, resolution='240', count=30)
+        # Get data for different timeframes with increased count for better analysis
+        df_15m = self.data_fetcher.get_forex_data(instrument, resolution='15', count=150)
+        df_1h = self.data_fetcher.get_forex_data(instrument, resolution='60', count=72)
+        df_4h = self.data_fetcher.get_forex_data(instrument, resolution='240', count=50)
         
         # Add technical indicators
         if not df_15m.empty and not df_1h.empty and not df_4h.empty:
@@ -71,11 +72,21 @@ class CryptoStrategy:
             # Get latest prices
             current_price = df_15m['close'].iloc[-1]
             
+            # Map crypto symbol to full name for news filtering
+            crypto_name_map = {
+                "SOLUSD": "Solana",
+                "ETHUSD": "Ethereum",
+                "BTCUSD": "Bitcoin",
+                "ADAUSD": "Cardano",
+                "DOTUSD": "Polkadot",
+                "LINKUSD": "Chainlink"
+            }
+            crypto_name = crypto_name_map.get(instrument, instrument[:3])
+            
             # Get news for sentiment analysis
             news_items = self.data_fetcher.get_news(category="crypto", min_id=0)
             
             # Filter news for this specific cryptocurrency
-            crypto_name = "Solana" if instrument == "SOLUSD" else "Ethereum"
             relevant_news = [
                 item for item in news_items 
                 if crypto_name.lower() in (item.get('headline', '') or item.get('summary', '')).lower()
@@ -235,166 +246,270 @@ class CryptoStrategy:
         )
     
     def _determine_trend(self, df):
-        """Determine trend direction based on moving averages"""
+        """Determine trend direction based on moving averages and additional criteria"""
         if 'sma_20' not in df.columns or 'sma_50' not in df.columns:
             return "neutral"
             
         latest = df.iloc[-1]
         sma20 = latest['sma_20']
         sma50 = latest['sma_50']
+        sma200 = latest.get('sma_200', None)
         close = latest['close']
         
-        # Check trend based on moving average relationship
+        # Enhanced trend detection
+        # Check for stronger trends with multiple confirmations
+        strong_uptrend = (close > sma20 > sma50 and 
+                        (sma200 is None or sma50 > sma200) and
+                        df['close'].pct_change(10).iloc[-1] > 0)
+                        
+        strong_downtrend = (close < sma20 < sma50 and
+                          (sma200 is None or sma50 < sma200) and
+                          df['close'].pct_change(10).iloc[-1] < 0)
+                          
+        # Check 20MA slope for trend strength
+        sma20_slope = df['sma_20'].diff(5).iloc[-1] / df['sma_20'].iloc[-6] * 100  # % change over 5 periods
+        
+        if strong_uptrend and sma20_slope > 0:
+            return "Long"
+        elif strong_downtrend and sma20_slope < 0:
+            return "Short"
+        
+        # Moderate trend
         if close > sma20 > sma50:
             return "Long"
         elif close < sma20 < sma50:
             return "Short"
-        else:
-            return "neutral"
+        
+        # Weaker trend signals
+        if close > sma20 and close > sma50:
+            return "Long"
+        elif close < sma20 and close < sma50:
+            return "Short"
+            
+        return "neutral"
     
     def _check_rsi(self, df_15m, df_1h):
-        """Check RSI for divergence or extreme readings"""
+        """
+        Check for RSI signals on multiple timeframes
+        
+        Args:
+            df_15m: 15m data with RSI
+            df_1h: 1h data with RSI
+            
+        Returns:
+            Signal direction or "neutral"
+        """
         if 'rsi' not in df_15m.columns or 'rsi' not in df_1h.columns:
             return "neutral"
             
-        latest_15m = df_15m.iloc[-1]
-        latest_1h = df_1h.iloc[-1]
+        rsi_15m = df_15m['rsi'].iloc[-1]
+        rsi_1h = df_1h['rsi'].iloc[-1]
         
-        rsi_15m = latest_15m['rsi']
-        rsi_1h = latest_1h['rsi']
+        # Check for extremely overbought/oversold conditions
+        if rsi_15m < 30 and rsi_1h < 35:
+            return "Long"  # Oversold on both timeframes
+        elif rsi_15m > 70 and rsi_1h > 65:
+            return "Short"  # Overbought on both timeframes
+            
+        # Check for RSI divergence
+        price_change_15m = df_15m['close'].pct_change(5).iloc[-1] * 100
+        price_change_1h = df_1h['close'].pct_change(5).iloc[-1] * 100
         
-        # Check for oversold condition (RSI < 30)
-        if rsi_15m < 30 and rsi_1h < 40:
+        # Bullish divergence: price making lower lows but RSI making higher lows
+        if price_change_15m < -1 and df_15m['rsi'].diff(3).iloc[-1] > 0:
             return "Long"
             
-        # Check for overbought condition (RSI > 70)
-        elif rsi_15m > 70 and rsi_1h > 60:
+        # Bearish divergence: price making higher highs but RSI making lower highs
+        if price_change_15m > 1 and df_15m['rsi'].diff(3).iloc[-1] < 0:
             return "Short"
             
+        # No clear signal
         return "neutral"
     
     def _check_bollinger_bands(self, df_15m, df_1h):
-        """Check Bollinger Bands for price touching or crossing bands"""
-        if 'BBL_20_2.0' not in df_15m.columns or 'BBU_20_2.0' not in df_15m.columns:
+        """
+        Check for Bollinger Bands setups
+        
+        Args:
+            df_15m: 15m data with Bollinger Bands
+            df_1h: 1h data with Bollinger Bands
+            
+        Returns:
+            Signal direction or "neutral"
+        """
+        # Check if Bollinger Bands are present
+        bb_columns = ['BBL_20_2.0', 'BBM_20_2.0', 'BBU_20_2.0']
+        if not all(col in df_15m.columns for col in bb_columns):
             return "neutral"
             
         latest_15m = df_15m.iloc[-1]
-        recent_15m = df_15m.iloc[-3:]
+        close_15m = latest_15m['close']
+        upper_15m = latest_15m['BBU_20_2.0']
+        lower_15m = latest_15m['BBL_20_2.0']
+        middle_15m = latest_15m['BBM_20_2.0']
         
-        lower_band = latest_15m['BBL_20_2.0']
-        upper_band = latest_15m['BBU_20_2.0']
-        close = latest_15m['close']
+        # Calculate Bollinger Band Width (volatility indicator)
+        bb_width = (upper_15m - lower_15m) / middle_15m
         
-        # Check for price touching lower band (potential long)
-        lower_touch = any(recent_15m['low'] <= recent_15m['BBL_20_2.0'])
+        # Check for price near or outside the bands
+        # Price near lower band (potential long)
+        if close_15m <= lower_15m * 1.02:
+            # Check if BB width is expanding (increasing volatility after contraction)
+            if bb_width > df_15m['BBU_20_2.0'].sub(df_15m['BBL_20_2.0']).div(df_15m['BBM_20_2.0']).rolling(10).mean().iloc[-1]:
+                return "Long"
+                
+        # Price near upper band (potential short)
+        if close_15m >= upper_15m * 0.98:
+            # Check if BB width is expanding (increasing volatility after contraction)
+            if bb_width > df_15m['BBU_20_2.0'].sub(df_15m['BBL_20_2.0']).div(df_15m['BBM_20_2.0']).rolling(10).mean().iloc[-1]:
+                return "Short"
+                
+        # Check for Bollinger Band squeeze (low volatility period)
+        recent_bb_width = df_15m['BBU_20_2.0'].sub(df_15m['BBL_20_2.0']).div(df_15m['BBM_20_2.0']).rolling(20).mean()
         
-        # Check for price touching upper band (potential short)
-        upper_touch = any(recent_15m['high'] >= recent_15m['BBU_20_2.0'])
+        if bb_width < recent_bb_width.quantile(0.2).iloc[-1]:
+            # Squeeze detected, look for breakout direction
+            if df_15m['close'].diff(3).iloc[-1] > 0 and df_15m['volume'].pct_change(3).iloc[-1] > 0.1:
+                return "Long"  # Upward breakout with volume
+            elif df_15m['close'].diff(3).iloc[-1] < 0 and df_15m['volume'].pct_change(3).iloc[-1] > 0.1:
+                return "Short"  # Downward breakout with volume
         
-        if lower_touch and close > lower_band:
-            return "Long"
-        elif upper_touch and close < upper_band:
-            return "Short"
-            
         return "neutral"
     
-    def _determine_trade_direction(self, overall_trend, trend_strength, rsi_signal, 
-                                   bb_signal, market_sentiment, forecast_direction):
-        """Determine overall trade direction based on all signals"""
-        # Convert signals to numerical values
-        signal_values = {
-            "Long": 1,
-            "neutral": 0,
-            "Short": -1,
-            "bullish": 1,
-            "bearish": -1
-        }
+    def _determine_trade_direction(self, overall_trend, trend_strength, rsi_signal, bb_signal,
+                               market_sentiment, forecast_direction):
+        """
+        Determine final trade direction based on multiple factors
         
-        # Assign weights to different signals
-        weights = {
-            "trend": 0.3,
-            "rsi": 0.2,
-            "bb": 0.2,
-            "sentiment": 0.1,
-            "forecast": 0.2
-        }
-        
-        # Adjust trend weight based on strength
-        if trend_strength == "strong":
-            weights["trend"] = 0.4
-            weights["rsi"] = 0.15
-            weights["bb"] = 0.15
-        elif trend_strength == "weak":
-            weights["trend"] = 0.2
-            weights["forecast"] = 0.3
+        Args:
+            overall_trend: Trend direction from moving averages
+            trend_strength: Strength of the trend
+            rsi_signal: Signal from RSI analysis
+            bb_signal: Signal from Bollinger Bands analysis
+            market_sentiment: Sentiment from news analysis
+            forecast_direction: Direction from price prediction model
             
-        # Calculate weighted signal
-        weighted_signal = (
-            weights["trend"] * signal_values.get(overall_trend, 0) +
-            weights["rsi"] * signal_values.get(rsi_signal, 0) +
-            weights["bb"] * signal_values.get(bb_signal, 0) +
-            weights["sentiment"] * signal_values.get(market_sentiment, 0) +
-            weights["forecast"] * signal_values.get(forecast_direction, 0)
-        )
+        Returns:
+            Final trade direction: "Long", "Short", or "neutral"
+        """
+        # Count signals in each direction
+        long_signals = 0
+        short_signals = 0
         
-        # Determine direction based on weighted signal
-        if weighted_signal > 0.2:
+        # Add weights to different signals
+        if overall_trend == "Long":
+            if trend_strength == "strong":
+                long_signals += 3
+            elif trend_strength == "moderate":
+                long_signals += 2
+            else:
+                long_signals += 1
+        elif overall_trend == "Short":
+            if trend_strength == "strong":
+                short_signals += 3
+            elif trend_strength == "moderate":
+                short_signals += 2
+            else:
+                short_signals += 1
+                
+        if rsi_signal == "Long":
+            long_signals += 2
+        elif rsi_signal == "Short":
+            short_signals += 2
+            
+        if bb_signal == "Long":
+            long_signals += 2
+        elif bb_signal == "Short":
+            short_signals += 2
+            
+        if market_sentiment == "bullish":
+            long_signals += 1
+        elif market_sentiment == "bearish":
+            short_signals += 1
+            
+        if forecast_direction == "bullish":
+            long_signals += 1
+        elif forecast_direction == "bearish":
+            short_signals += 1
+            
+        # Consider market conditions - for cryptocurrencies, we need strong confirmation
+        # Require at least 5 points of signal strength in either direction
+        min_signal_threshold = 5
+            
+        # Determine direction based on weighted signals
+        if long_signals >= min_signal_threshold and long_signals > short_signals + 1:
             return "Long"
-        elif weighted_signal < -0.2:
+        elif short_signals >= min_signal_threshold and short_signals > long_signals + 1:
             return "Short"
         else:
             return "neutral"
-    
+            
     def _calculate_confidence(self, trade_direction, overall_trend, trend_strength, 
-                              rsi_signal, bb_signal, market_sentiment, sentiment_score,
-                              forecast_direction, forecast_confidence, risk_reward):
-        """Calculate confidence level for the trade setup"""
-        base_confidence = 50  # Start with base confidence of 50%
+                        rsi_signal, bb_signal, market_sentiment, sentiment_score,
+                        forecast_direction, forecast_confidence, risk_reward):
+        """
+        Calculate confidence level for the trade (0-100%)
         
-        # Add confidence based on trend alignment
+        Returns:
+            Confidence score (0-100)
+        """
+        if trade_direction == "neutral":
+            return 0
+            
+        # Base confidence
+        confidence = 50
+        
+        # Add or subtract based on alignment of signals
+        # Trend alignment
         if overall_trend == trade_direction:
             if trend_strength == "strong":
-                base_confidence += 15
+                confidence += 15
             elif trend_strength == "moderate":
-                base_confidence += 10
+                confidence += 10
             else:
-                base_confidence += 5
-                
-        # Add confidence based on RSI signal
+                confidence += 5
+        elif overall_trend != "neutral":
+            confidence -= 10
+            
+        # RSI alignment
         if rsi_signal == trade_direction:
-            base_confidence += 10
+            confidence += 8
+        elif rsi_signal != "neutral":
+            confidence -= 5
             
-        # Add confidence based on BB signal
+        # Bollinger Bands alignment
         if bb_signal == trade_direction:
-            base_confidence += 10
+            confidence += 8
+        elif bb_signal != "neutral":
+            confidence -= 5
             
-        # Add confidence based on sentiment alignment
-        sentiment_match = (
-            (trade_direction == "Long" and market_sentiment == "bullish") or
-            (trade_direction == "Short" and market_sentiment == "bearish")
-        )
-        if sentiment_match:
-            base_confidence += 5 + min(5, abs(sentiment_score) * 10)
+        # Sentiment alignment
+        if (market_sentiment == "bullish" and trade_direction == "Long") or \
+           (market_sentiment == "bearish" and trade_direction == "Short"):
+            confidence += 5 + min(5, abs(sentiment_score) * 5)
+        elif market_sentiment != "neutral":
+            confidence -= 5
             
-        # Add confidence based on forecast alignment
-        forecast_match = (
-            (trade_direction == "Long" and forecast_direction == "bullish") or
-            (trade_direction == "Short" and forecast_direction == "bearish")
-        )
-        if forecast_match:
-            base_confidence += forecast_confidence / 10
+        # Forecast alignment
+        if (forecast_direction == "bullish" and trade_direction == "Long") or \
+           (forecast_direction == "bearish" and trade_direction == "Short"):
+            confidence += forecast_confidence // 10  # Add 0-10 based on forecast confidence
+        elif forecast_direction != "neutral":
+            confidence -= 5
             
-        # Add confidence based on risk/reward ratio
+        # Risk/reward factor
         if risk_reward:
             if risk_reward >= 3:
-                base_confidence += 15
+                confidence += 10
             elif risk_reward >= 2:
-                base_confidence += 10
-            elif risk_reward >= 1.5:
-                base_confidence += 5
+                confidence += 5
+            elif risk_reward < 1:
+                confidence -= 10
                 
-        # Ensure confidence is within 0-100 range
-        return min(100, max(0, int(base_confidence)))
+        # Ensure confidence is in range 0-100
+        confidence = max(0, min(100, confidence))
+        
+        return confidence
     
     def _generate_rationale(self, instrument, trade_direction, overall_trend, trend_strength,
                             rsi_signal, bb_signal, market_sentiment, forecast_direction):
