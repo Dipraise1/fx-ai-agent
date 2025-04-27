@@ -30,6 +30,14 @@ def setup_nltk_data():
     This function configures NLTK to use local data directories and
     creates fallbacks for essential components.
     """
+    # Fix SSL certificate verification issues
+    try:
+        _create_unverified_https_context = ssl._create_unverified_context
+        ssl._create_default_https_context = _create_unverified_https_context
+        logger.info("SSL certificate verification disabled for NLTK downloads")
+    except AttributeError:
+        logger.warning("Failed to disable SSL certificate verification")
+    
     # Create and use local NLTK data directory
     nltk_data_dir = os.path.join(Path(__file__).parent.parent.parent, 'nltk_data')
     os.makedirs(nltk_data_dir, exist_ok=True)

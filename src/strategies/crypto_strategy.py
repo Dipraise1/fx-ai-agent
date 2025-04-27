@@ -65,68 +65,87 @@ class CryptoStrategy:
         
         # Add technical indicators
         if not df_15m.empty and not df_1h.empty and not df_4h.empty:
-            df_15m = self.data_fetcher.add_technical_indicators(df_15m)
-            df_1h = self.data_fetcher.add_technical_indicators(df_1h)
-            df_4h = self.data_fetcher.add_technical_indicators(df_4h)
-            
-            # Get latest prices
-            current_price = df_15m['close'].iloc[-1]
-            
-            # Map crypto symbol to full name for news filtering
-            crypto_name_map = {
-                "SOLUSD": "Solana",
-                "ETHUSD": "Ethereum",
-                "BTCUSD": "Bitcoin",
-                "ADAUSD": "Cardano",
-                "DOTUSD": "Polkadot",
-                "LINKUSD": "Chainlink"
-            }
-            crypto_name = crypto_name_map.get(instrument, instrument[:3])
-            
-            # Get news for sentiment analysis
-            news_items = self.data_fetcher.get_news(category="crypto", min_id=0)
-            
-            # Filter news for this specific cryptocurrency
-            relevant_news = [
-                item for item in news_items 
-                if crypto_name.lower() in (item.get('headline', '') or item.get('summary', '')).lower()
-            ][:5]  # Get up to 5 relevant news items
-            
-            # Get sentiment from news
-            if relevant_news:
-                sentiment_results = self.sentiment_analyzer.analyze_news_batch(relevant_news)
-                market_sentiment = sentiment_results['overall_sentiment']
-                sentiment_score = sentiment_results['score']
-                sentiment_confidence = sentiment_results['confidence']
-            else:
-                market_sentiment = "neutral"
-                sentiment_score = 0
-                sentiment_confidence = 0
+            try:
+                df_15m = self.data_fetcher.add_technical_indicators(df_15m)
+                df_1h = self.data_fetcher.add_technical_indicators(df_1h)
+                df_4h = self.data_fetcher.add_technical_indicators(df_4h)
                 
-            # Train price prediction model if not trained
-            if not self.price_models[instrument].is_trained and not df_1h.empty:
-                self.price_models[instrument].train(df_1h)
+                # Get latest prices
+                current_price = df_15m['close'].iloc[-1]
                 
-            # Get price forecast if model is trained
-            if self.price_models[instrument].is_trained:
-                forecast = self.price_models[instrument].get_forecast(df_1h, n_future=5)
-                forecast_direction = forecast['forecast_direction']
-                forecast_confidence = forecast['confidence']
-            else:
+                # Map crypto symbol to full name for news filtering
+                crypto_name_map = {
+                    "SOLUSD": "Solana",
+                    "ETHUSD": "Ethereum",
+                    "BTCUSD": "Bitcoin",
+                    "ADAUSD": "Cardano",
+                    "DOTUSD": "Polkadot",
+                    "LINKUSD": "Chainlink"
+                }
+                crypto_name = crypto_name_map.get(instrument, instrument[:3])
+                
+                # Get news for sentiment analysis
+                news_items = self.data_fetcher.get_news(category="crypto", min_id=0)
+                
+                # Filter news for this specific cryptocurrency
+                relevant_news = [
+                    item for item in news_items 
+                    if crypto_name.lower() in (item.get('headline', '') or item.get('summary', '')).lower()
+                ][:5]  # Get up to 5 relevant news items
+                
+                # Get sentiment from news
+                if relevant_news:
+                    try:
+                        sentiment_results = self.sentiment_analyzer.analyze_news_batch(relevant_news)
+                        market_sentiment = sentiment_results['overall_sentiment']
+                        sentiment_score = sentiment_results['score']
+                        sentiment_confidence = sentiment_results['confidence']
+                    except Exception as e:
+                        print(f"Error analyzing sentiment: {e}")
+                        market_sentiment = "neutral"
+                        sentiment_score = 0
+                        sentiment_confidence = 0
+                else:
+                    market_sentiment = "neutral"
+                    sentiment_score = 0
+                    sentiment_confidence = 0
+                    
+                # Try to train price prediction model if not trained
                 forecast_direction = "neutral"
                 forecast_confidence = 0
                 
-            # Check for trade setups
-            return self._check_for_setups(
-                instrument, 
-                df_15m, 
-                df_1h, 
-                df_4h, 
-                market_sentiment,
-                sentiment_score,
-                forecast_direction,
-                forecast_confidence
-            )
+                try:
+                    if instrument in self.price_models and self.price_models[instrument] and not self.price_models[instrument].is_trained and not df_1h.empty:
+                        try:
+                            self.price_models[instrument].train(df_1h)
+                        except Exception as e:
+                            print(f"Error training price model for {instrument}: {e}")
+                        
+                    # Get price forecast if model is trained
+                    if instrument in self.price_models and self.price_models[instrument] and self.price_models[instrument].is_trained:
+                        forecast = self.price_models[instrument].get_forecast(df_1h, n_future=5)
+                        forecast_direction = forecast['forecast_direction']
+                        forecast_confidence = forecast['confidence']
+                except Exception as e:
+                    print(f"Error with price prediction for {instrument}: {e}")
+                    
+                # Check for trade setups
+                return self._check_for_setups(
+                    instrument, 
+                    df_15m, 
+                    df_1h, 
+                    df_4h, 
+                    market_sentiment,
+                    sentiment_score,
+                    forecast_direction,
+                    forecast_confidence
+                )
+            except Exception as e:
+                return TradeSetup.no_trade(
+                    instrument=instrument,
+                    strategy=self.name,
+                    reason=f"Error analyzing market data: {str(e)}"
+                )
         else:
             return TradeSetup.no_trade(
                 instrument=instrument,
